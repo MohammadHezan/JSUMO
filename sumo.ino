@@ -19,62 +19,53 @@ const int BACK_SPEED   = 200;
 
 unsigned long lastAction = 0;
 const unsigned long ACTION_INTERVAL = 50;
-unsigned long searchTimer = 0;
-float searchAngle = 0;
-const float SEARCH_STEP = 15;
-
-enum State { LINE_FOLLOW, ATTACK, SEARCH };
-State robotState = SEARCH;
-
-enum EnemyDir { NONE, LEFT, CENTER, RIGHT };
-EnemyDir lastEnemyDirection = NONE;
 
 int readSensor(int pin)
 {
-	int sum = 0;
-	for(int i = 0; i < 3; i++)
-		sum += digitalRead(pin);
-	return (sum >= 2);
+  int sum = 0;
+  for (int i = 0; i < 3; i++)
+    sum += digitalRead(pin);
+  return (sum >= 2);
 }
 
 void moveLeft(int speed)
 {
-	analogWrite(L_RPWM, 0);
-	analogWrite(L_LPWM, speed);
-	analogWrite(R_RPWM, speed);
-	analogWrite(R_LPWM, 0);
+  analogWrite(L_RPWM, speed);
+  analogWrite(L_LPWM, 0);
+  analogWrite(R_RPWM, 0);
+  analogWrite(R_LPWM, speed);
 }
 
 void moveRight(int speed)
 {
-	analogWrite(R_RPWM, speed);
-	analogWrite(R_LPWM, 0);
-	analogWrite(L_RPWM, 0);
-	analogWrite(L_LPWM, speed);
+  analogWrite(R_RPWM, speed);
+  analogWrite(R_LPWM, 0);
+  analogWrite(L_RPWM, 0);
+  analogWrite(L_LPWM, speed);
 }
 
 void moveForward(int speed)
 {
-	analogWrite(L_RPWM, speed);
-	analogWrite(L_LPWM, 0);
-	analogWrite(R_RPWM, speed);
-	analogWrite(R_LPWM, 0);
+  analogWrite(L_RPWM, speed);
+  analogWrite(L_LPWM, 0);
+  analogWrite(R_RPWM, speed);
+  analogWrite(R_LPWM, 0);
 }
 
 void moveBackward(int speed)
 {
-	analogWrite(L_RPWM, 0);
-	analogWrite(L_LPWM, speed);
-	analogWrite(R_RPWM, 0);
-	analogWrite(R_LPWM, speed);
+  analogWrite(L_RPWM, 0);
+  analogWrite(L_LPWM, speed);
+  analogWrite(R_RPWM, 0);
+  analogWrite(R_LPWM, speed);
 }
 
 void stopMotors()
 {
-	analogWrite(L_RPWM, 0);
-	analogWrite(L_LPWM, 0);
-	analogWrite(R_RPWM, 0);
-	analogWrite(R_LPWM, 0);
+  analogWrite(L_RPWM, 0);
+  analogWrite(L_LPWM, 0);
+  analogWrite(R_RPWM, 0);
+  analogWrite(R_LPWM, 0);
 }
 
 void handleLineEdgeCases(int fl, int fr, int bl, int br)
@@ -119,102 +110,55 @@ void handleLineEdgeCases(int fl, int fr, int bl, int br)
 
 void setup()
 {
-	pinMode(L_RPWM, OUTPUT);
-	pinMode(L_LPWM, OUTPUT);
-	pinMode(R_RPWM, OUTPUT);
-	pinMode(R_LPWM, OUTPUT);
+  Serial.begin(9600);
 
-	pinMode(LINE_FL, INPUT);
-	pinMode(LINE_FR, INPUT);
-	pinMode(LINE_BL, INPUT);
-	pinMode(LINE_BR, INPUT);
+  pinMode(L_RPWM, OUTPUT);
+  pinMode(L_LPWM, OUTPUT);
+  pinMode(R_RPWM, OUTPUT);
+  pinMode(R_LPWM, OUTPUT);
 
-	pinMode(IR_LEFT, INPUT);
-	pinMode(IR_CENTER, INPUT);
-	pinMode(IR_RIGHT, INPUT);
+  pinMode(LINE_FL, INPUT);
+  pinMode(LINE_BL, INPUT);
+  pinMode(LINE_BR, INPUT);
+
+  pinMode(IR_LEFT, INPUT);
+  pinMode(IR_CENTER, INPUT);
+  pinMode(IR_RIGHT, INPUT);
+
+  stopMotors();
 }
 
 void loop()
 {
-	if(millis() - lastAction < ACTION_INTERVAL)
-		return;
-	lastAction = millis();
+  if (millis() - lastAction < ACTION_INTERVAL)
+    return;
+  lastAction = millis();
 
-	int fl = readSensor(LINE_FL);
-	int fr = readSensor(LINE_FR);
-	int bl = readSensor(LINE_BL);
-	int br = readSensor(LINE_BR);
+  int fl = readSensor(LINE_FL);
+  int fr = readSensor(LINE_FR);
+  int bl = readSensor(LINE_BL);
+  int br = readSensor(LINE_BR);
 
-	if(!fl || !fr || !bl || !br)
+  if(!fl || !fr || !bl || !br)
 	{
 		handleLineEdgeCases(fl, fr, bl, br);
 		return;
 	}
+  
+  int irL = readSensor(IR_LEFT);
+  int irC = readSensor(IR_CENTER);
+  int irR = readSensor(IR_RIGHT);
 
-	int irL = readSensor(IR_LEFT);
-	int irC = readSensor(IR_CENTER);
-	int irR = readSensor(IR_RIGHT);
-
-
-	if(!irL || !irC || !irR)
-		robotState = ATTACK;
-	else
-		robotState = SEARCH;
-
-	switch(robotState)
-	{
-	case ATTACK:
-		if(!irC)
-		{
-			moveForward(ATTACK_SPEED);
-			lastEnemyDirection = CENTER;
-		}
-		else if(!irL)
-		{
-			moveLeft(TURN_SPEED);
-			moveForward(100);
-			lastEnemyDirection = LEFT;
-		}
-		else if(!irR)
-		{
-			moveRight(TURN_SPEED);
-			moveForward(100);
-			lastEnemyDirection = RIGHT;
-		}
-		break;
-
-	case SEARCH:
-		if(millis() - searchTimer > 150)
-		{
-			searchAngle += SEARCH_STEP;
-			if(searchAngle >= 180)
-				searchAngle = 0;
-			searchTimer = millis();
-		}
-
-		if(lastEnemyDirection == LEFT)
-		{
-			if(searchAngle < 90)
-				moveLeft(SEARCH_SPEED);
-			else
-				moveRight(SEARCH_SPEED);
-		}
-		else if(lastEnemyDirection == RIGHT)
-		{
-			if(searchAngle < 90)
-				moveRight(SEARCH_SPEED);
-			else
-				moveLeft(SEARCH_SPEED);
-		}
-		else
-		{
-			if(searchAngle < 90)
-				moveRight(SEARCH_SPEED);
-			else
-				moveLeft(SEARCH_SPEED);
-		}
-
-		moveForward(SEARCH_SPEED / 2);
-		break;
-	}
-}
+  if (!irC || !irL || !irR)
+  {
+    if (!irC)
+      moveForward(ATTACK_SPEED);
+    else if (!irL)
+      moveLeft(TURN_SPEED);
+    else if (!irR)
+      moveRight(TURN_SPEED);
+    return;
+  }
+  else
+    moveRight(SEARCH_SPEED);
+} 
