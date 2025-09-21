@@ -1,0 +1,130 @@
+
+#define L_RPWM 10
+#define L_LPWM 9
+#define R_RPWM 5
+#define R_LPWM 3
+
+#define LINE_FL A1
+#define LINE_FR A3
+#define LINE_BL A0
+#define LINE_BR A2
+
+#define IR_LEFT   2
+#define IR_CENTER 8
+#define IR_RIGHT  7
+
+const int ATTACK_SPEED = 255;
+const int TURN_SPEED   = 180;
+const int SEARCH_SPEED = 150;
+const int BACK_SPEED   = 200;
+
+unsigned long lastSensorRead = 0;
+unsigned long lastDecision = 0;
+unsigned long lastMoveUpdate = 0;
+unsigned long searchTimer = 0;
+
+const unsigned long SENSOR_INTERVAL   = 30;
+const unsigned long DECISION_INTERVAL = 50;
+const unsigned long MOVE_INTERVAL     = 20;
+
+int searchAngle = 0;
+const int SEARCH_STEP = 15;
+
+enum State { LINE_FOLLOW, ATTACK, SEARCH };
+State robotState = SEARCH;
+
+enum EnemyDir { NONE, LEFT, CENTER, RIGHT };
+EnemyDir lastEnemyDirection = NONE;
+
+byte lineSensors = 0;
+byte irSensors   = 0;
+
+int readSensor(int pin) {
+  int sum = 0;
+  for(int i = 0; i < 3; i++) sum += digitalRead(pin);
+  return (sum >= 2);
+}
+
+void setMotors(int l_fwd, int l_bwd, int r_fwd, int r_bwd) {
+  analogWrite(L_RPWM, l_fwd);
+  analogWrite(L_LPWM, l_bwd);
+  analogWrite(R_RPWM, r_fwd);
+  analogWrite(R_LPWM, r_bwd);
+}
+
+void moveLeft(int speed)     { setMotors(0, speed, speed, 0); }
+void moveRight(int speed)    { setMotors(speed, 0, 0, speed); }
+void moveForward(int speed)  { setMotors(speed, 0, speed, 0); }
+void moveBackward(int speed) { setMotors(0, speed, 0, speed); }
+void stopMotors()            { setMotors(0,0,0,0); }
+
+void handleLineEdgeCases(byte s) {
+  switch(s) {
+    case 0b1100: moveBackward(BACK_SPEED); break; 
+    case 0b0011: moveForward(BACK_SPEED); break; 
+    case 0b1000: case 0b1010: moveBackward(BACK_SPEED); moveRight(TURN_SPEED); break;
+    case 0b0100: case 0b0110: moveBackward(BACK_SPEED); moveLeft(TURN_SPEED);  break;
+    case 0b0010: moveForward(BACK_SPEED); moveRight(TURN_SPEED); break;
+    case 0b0001: moveForward(BACK_SPEED); moveLeft(TURN_SPEED);  break;
+    case 0b0000: stopMotors(); break;
+  }
+}
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(L_RPWM, OUTPUT); pinMode(L_LPWM, OUTPUT);
+  pinMode(R_RPWM, OUTPUT); pinMode(R_LPWM, OUTPUT);
+  pinMode(LINE_FL, INPUT); pinMode(LINE_FR, INPUT);
+  pinMode(LINE_BL, INPUT); pinMode(LINE_BR, INPUT);
+  pinMode(IR_LEFT, INPUT); pinMode(IR_CENTER, INPUT); pinMode(IR_RIGHT, INPUT);
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  if(now - lastSensorRead >= SENSOR_INTERVAL) {
+    lastSensorRead = now;
+    lineSensors = (readSensor(LINE_FL) << 3) | (readSensor(LINE_FR) << 2) |
+                  (readSensor(LINE_BL) << 1) |  readSensor(LINE_BR);
+    irSensors   = (readSensor(IR_LEFT) << 2) | (readSensor(IR_CENTER) << 1) |
+                   readSensor(IR_RIGHT);
+  }
+
+  if(now - lastDecision >= DECISION_INTERVAL) {
+    lastDecision = now;
+    if(lineSensors != 0b1111) robotState = LINE_FOLLOW;
+    else if(irSensors != 0b111) robotState = ATTACK;
+    else robotState = SEARCH;
+  }
+
+  if(now - lastMoveUpdate >= MOVE_INTERVAL) {
+    lastMoveUpdate = now;
+    switch(robotState) {
+      case LINE_FOLLOW:
+        handleLineEdgeCases(lineSensors);
+        break;
+
+      case ATTACK:
+        if(!(irSensors & 0b010)) { moveForward(ATTACK_SPEED); lastEnemyDirection = CENTER; }
+        else if(!(irSensors & 0b100)) { moveLeft(TURN_SPEED); moveForward(100); lastEnemyDirection = LEFT; }
+        else if(!(irSensors & 0b001)) { moveRight(TURN_SPEED); moveForward(100); lastEnemyDirection = RIGHT; }
+        break;
+
+      case SEARCH:
+        if(now - searchTimer > 150) {
+          searchAngle += SEARCH_STEP;
+          if(searchAngle >= 180) searchAngle = 0;
+          searchTimer = now;
+        }
+        if(lastEnemyDirection == LEFT) {
+          if(searchAngle < 90) moveLeft(SEARCH_SPEED); else moveRight(SEARCH_SPEED);
+        } else if(lastEnemyDirection == RIGHT) {
+          if(searchAngle < 90) moveRight(SEARCH_SPEED); else moveLeft(SEARCH_SPEED);
+        } else {
+          if(searchAngle < 90) moveRight(SEARCH_SPEED); else moveLeft(SEARCH_SPEED);
+        }
+        moveForward(SEARCH_SPEED / 2);
+        break;
+    }
+  }
+}
