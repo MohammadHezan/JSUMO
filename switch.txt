@@ -5,7 +5,7 @@
 
 #define LINE_FL     A1
 #define LINE_FR     A3
-#define LINE_BL     A0
+#define LINE_BL     A5
 #define LINE_BR     A2
 
 #define IR_LEFT       2
@@ -101,6 +101,7 @@ bool handleLineCorrection()
 
 void setup()
 {
+  Serial.begin(9600);
 	pinMode(L_RPWM, OUTPUT);
 	pinMode(L_LPWM, OUTPUT);
 	pinMode(R_RPWM, OUTPUT);
@@ -126,10 +127,10 @@ void loop()
 		return;
 	lastAction = millis();
 
-	fl = readSensor(LINE_FL);
-	fr = readSensor(LINE_FR);
-	bl = readSensor(LINE_BL);
-	br = readSensor(LINE_BR);
+	fl = digitalRead(LINE_FL);
+	fr = digitalRead(LINE_FR);
+	bl = digitalRead(LINE_BL);
+	br = digitalRead(LINE_BR);
 
   if(handleLineCorrection()) return; // skip normal behavior while holding
 
@@ -138,6 +139,7 @@ void loop()
     prepareLineCorrection(fl, fr, bl, br);
     return;
   }
+
 	int irL  = readSensor(IR_LEFT);
 	int irC  = readSensor(IR_CENTER);
 	int irR  = readSensor(IR_RIGHT);
@@ -220,4 +222,5 @@ void loop()
 		moveForward(SEARCH_SPEED);
 		break;
 	}
+  
 }
