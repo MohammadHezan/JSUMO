@@ -24,7 +24,7 @@ unsigned long lastAction = 0;
 const unsigned long ACTION_INTERVAL = 50;
 unsigned long searchTimer = 0;
 float searchAngle = 0;
-const float SEARCH_STEP = 15; //15
+const float SEARCH_STEP = 30; //15
 
 const unsigned long SIDE_TURN_TIME = 500;
 unsigned long turnStart = 0;
@@ -70,14 +70,14 @@ void stopMotors()            { setMotors(0,0,0,0); }
 
 void handleLineEdgeCases(int fl, int fr, int bl, int br)
 {
-	if(!fl && !fr) { moveBackward(BACK_SPEED); delay(150); moveRight(TURN_SPEED); }
+	if(!fl && !fr) { moveBackward(BACK_SPEED);}
 	else if(!bl && !br) moveForward(BACK_SPEED);
-	else if(!fl && !bl) { moveBackward(BACK_SPEED); delay(150); moveRight(TURN_SPEED); }
-	else if(!fr && !br) { moveBackward(BACK_SPEED); delay(150); moveLeft(TURN_SPEED); }
-	else if(!fl) { moveBackward(BACK_SPEED); delay(150); moveRight(TURN_SPEED); }
-	else if(!fr) { moveBackward(BACK_SPEED); delay(150); moveLeft(TURN_SPEED); }
-	else if(!bl) { moveForward(BACK_SPEED); delay(150); moveRight(TURN_SPEED); }
-	else if(!br) { moveForward(BACK_SPEED); delay(150); moveLeft(TURN_SPEED); }
+	else if(!fl && !bl) { moveBackward(BACK_SPEED); moveRight(TURN_SPEED); }
+	else if(!fr && !br) { moveBackward(BACK_SPEED); moveLeft(TURN_SPEED); }
+	else if(!fl) { moveBackward(BACK_SPEED);  moveBackward(BACK_SPEED);  moveRight(TURN_SPEED); }
+	else if(!fr) { moveBackward(BACK_SPEED);  moveBackward(BACK_SPEED);  moveLeft(TURN_SPEED); }
+	else if(!bl) { moveForward(BACK_SPEED);   moveForward(BACK_SPEED);   moveRight(TURN_SPEED); }
+	else if(!br) { moveForward(BACK_SPEED);   moveForward(BACK_SPEED);   moveLeft(TURN_SPEED); }
 	else if(!fl && !fr && !bl && !br) stopMotors();
 }
 
@@ -138,7 +138,6 @@ void loop()
     prepareLineCorrection(fl, fr, bl, br);
     return;
   }
-
 	int irL  = digitalRead(IR_LEFT);
 	int irC  = digitalRead(IR_CENTER);
 	int irR  = digitalRead(IR_RIGHT);
