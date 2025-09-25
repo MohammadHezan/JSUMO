@@ -74,8 +74,8 @@ void handleLineEdgeCases(int fl, int fr, int bl, int br)
 	else if(!bl && !br) moveForward(ATTACK_SPEED);
 	else if(!fl && !bl) { moveBackward(BACK_SPEED); moveRight(TURN_SPEED); }
 	else if(!fr && !br) { moveBackward(BACK_SPEED); moveLeft(TURN_SPEED); }
-	else if(!fl) { moveBackward(BACK_SPEED);  delay(50);  moveRight(TURN_SPEED); }
-	else if(!fr) { moveBackward(BACK_SPEED);  delay(50);  moveLeft(TURN_SPEED); }
+	else if(!fl) { moveBackward(BACK_SPEED);  delay(30);  moveRight(TURN_SPEED); }
+	else if(!fr) { moveBackward(BACK_SPEED);  delay(30);  moveLeft(TURN_SPEED); }
 	else if(!bl) { moveForward(ATTACK_SPEED);  moveRight(TURN_SPEED); }
 	else if(!br) { moveForward(ATTACK_SPEED);  moveLeft(TURN_SPEED); }
 	else if(!fl && !fr && !bl && !br) stopMotors();
