@@ -3,232 +3,192 @@
 #define R_RPWM      5
 #define R_LPWM      3
 
-#define LINE_FL     A1
-#define LINE_FR     A3
-#define LINE_BL     A0
-#define LINE_BR     A2
+#define LINE_FL_MASK  (1 << 1)
+#define LINE_FR_MASK  (1 << 3)
+#define LINE_BL_MASK  (1 << 0)
+#define LINE_BR_MASK  (1 << 2)
 
-#define IR_LEFT       2
-#define IR_CENTER     8
-#define IR_RIGHT      7
-#define IR_SIDE_LEFT  4
-#define IR_SIDE_RIGHT 6
+#define IR_LEFT_MASK      (1 << 2)
+#define IR_CENTER_MASK    (1 << 0)
+#define IR_RIGHT_MASK     (1 << 7)
+#define IR_SIDE_LEFT_MASK (1 << 4)
+#define IR_SIDE_RIGHT_MASK (1 << 6)
 
 const int ATTACK_SPEED = 255;
-const int TURN_SPEED   = 220;
-const int SEARCH_SPEED = 220;
-const int BACK_SPEED   = 255;
-const int SIDE_TURN_SPEED = 255;
+const int TURN_SPEED = 180;
+const int SEARCH_SPEED = 150;
+const int BACK_SPEED = 200;
 
 unsigned long lastAction = 0;
 const unsigned long ACTION_INTERVAL = 50;
 unsigned long searchTimer = 0;
 float searchAngle = 0;
-const float SEARCH_STEP = 30; //15
-
-const unsigned long SIDE_TURN_TIME = 500;
+const float SEARCH_STEP = 15;
+const unsigned long SIDE_TURN_TIME = 300;
 unsigned long turnStart = 0;
 bool turning = false;
 int turnDirection = 0;
 
-unsigned long lineActionStart = 0;
-bool lineActionActive = false;
-const unsigned long lineActionDuration = 800; // hold motors 500ms
-
 enum State { LINE_FOLLOW, ATTACK, SEARCH };
 State robotState = SEARCH;
 
-enum EnemyDir { LEFT, CENTER, RIGHT };
-EnemyDir lastEnemyDirection = CENTER;
+enum EnemyDir { NONE, LEFT, CENTER, RIGHT };
+EnemyDir lastEnemyDirection = NONE;
 
-int fr, fl, bl, br;
-
-// ---- قراءة السنسور مع فلترة ----
-int readSensor(int pin)
+void setMotors(int l_fwd, int l_bwd, int r_fwd, int r_bwd)
 {
-  int sum = 0;
-  for(int i = 0; i < 3; i++)
-    sum += digitalRead(pin);
-  return (sum >= 2);
+	analogWrite(L_RPWM, l_fwd);
+	analogWrite(L_LPWM, l_bwd);
+	analogWrite(R_RPWM, r_fwd);
+	analogWrite(R_LPWM, r_bwd);
 }
 
-// ---- تحريك الموتورات ----
-void setMotors(int l_fwd, int l_bwd, int r_fwd, int r_bwd) {
-  analogWrite(L_RPWM, l_fwd);
-  analogWrite(L_LPWM, l_bwd);
-  analogWrite(R_RPWM, r_fwd);
-  analogWrite(R_LPWM, r_bwd);
-}
+void moveLeft(int speed) { setMotors(0, speed, speed, 0); }
+void moveRight(int speed) { setMotors(speed, 0, 0, speed); }
+void moveForward(int speed) { setMotors(speed, 0, speed, 0); }
+void moveBackward(int speed) { setMotors(0, speed, 0, speed); }
+void stopMotors() { setMotors(0, 0, 0, 0); }
 
-void moveRight(int speed)     { setMotors(0, speed, speed, 0); }
-void moveLeft(int speed)      { setMotors(speed, 0, 0, speed); }
-void moveForward(int speed)   { setMotors(speed, 0, speed, 0); }
-void moveBackward(int speed)  { setMotors(0, speed, 0, speed); }
-void stopMotors()             { setMotors(0,0,0,0); }
-
-// ---- الرجوع الخلفي المؤقت ----
-bool moveBackShort(int speed, unsigned long duration = 50) {
-  static unsigned long escapeStart = 0;
-  static bool active = false;
-
-  if (!active) {
-    escapeStart = millis();
-    active = true;
-  }
-
-  if (millis() - escapeStart < duration) {
-    moveBackward(speed);
-    return false;   // لسه ما خلص
-  } else {
-    active = false; // انتهى الرجوع
-    return true;    // جاهز للتحرك التالي
-  }
-}
-
-// ---- معالجة حالات الخط ----
-void handleLineEdgeCases(int fl, int fr, int bl, int br)
+void readLineSensors(uint8_t &fl, uint8_t &fr, uint8_t &bl, uint8_t &br)
 {
-  if(!fl && !fr) {
-    if(moveBackShort(BACK_SPEED)) moveRight(TURN_SPEED);
-  }
-  else if(!bl && !br) moveForward(ATTACK_SPEED);
-  else if(!fl && !bl) {
-    if(moveBackShort(BACK_SPEED)) moveRight(TURN_SPEED);
-  }
-  else if(!fr && !br) {
-    if(moveBackShort(BACK_SPEED)) moveLeft(TURN_SPEED);
-  }
-  else if(!fl) {
-    if(moveBackShort(BACK_SPEED)) moveRight(TURN_SPEED);
-  }
-  else if(!fr) {
-    if(moveBackShort(BACK_SPEED)) moveLeft(TURN_SPEED);
-  }
-  else if(!bl) moveForward(ATTACK_SPEED), moveRight(TURN_SPEED);
-  else if(!br) moveForward(ATTACK_SPEED), moveLeft(TURN_SPEED);
-  else if(!fl && !fr && !bl && !br) stopMotors();
+	uint8_t line = PINC;
+	fl = !(line & LINE_FL_MASK);
+	fr = !(line & LINE_FR_MASK);
+	bl = !(line & LINE_BL_MASK);
+	br = !(line & LINE_BR_MASK);
 }
 
-// ---- تحضير تعديل الخط ----
-void prepareLineCorrection(int fl, int fr, int bl, int br) {
-  lineActionStart = millis();
-  lineActionActive = true;
+void readIRSensors(uint8_t &l, uint8_t &c, uint8_t &r, uint8_t &sl, uint8_t &sr)
+{
+	uint8_t portD = PIND;
+	uint8_t portB = PINB;
+	l = !(portD & IR_LEFT_MASK);
+	c = !(portB & IR_CENTER_MASK);
+	r = !(portD & IR_RIGHT_MASK);
+	sl = !(portD & IR_SIDE_LEFT_MASK);
+	sr = !(portD & IR_SIDE_RIGHT_MASK);
 }
 
-// ---- معالجة تعديل الخط ----
-bool handleLineCorrection() {
-  if(lineActionActive) {
-    handleLineEdgeCases(fl, fr, bl, br);
-    if(millis() - lineActionStart >= lineActionDuration)
-      lineActionActive = false;
-    return true; // correction active
-  }
-  return false; // not active
+void handleLineEdgeCases(uint8_t fl, uint8_t fr, uint8_t bl, uint8_t br)
+{
+	if (!fl && !fr) moveBackward(BACK_SPEED);
+	else if (!bl && !br) moveForward(BACK_SPEED);
+	else if (!fl && !bl) { moveBackward(BACK_SPEED); moveRight(TURN_SPEED); }
+	else if (!fr && !br) { moveBackward(BACK_SPEED); moveLeft(TURN_SPEED); }
+	else if (!fl) { moveBackward(BACK_SPEED); moveRight(TURN_SPEED); }
+	else if (!fr) { moveBackward(BACK_SPEED); moveLeft(TURN_SPEED); }
+	else if (!bl) { moveForward(BACK_SPEED); moveRight(TURN_SPEED); }
+	else if (!br) { moveForward(BACK_SPEED); moveLeft(TURN_SPEED); }
+	else if (!fl && !fr && !bl && !br) stopMotors();
 }
 
-// ---- الإعدادات ----
-void setup() {
-  pinMode(L_RPWM, OUTPUT);
-  pinMode(L_LPWM, OUTPUT);
-  pinMode(R_RPWM, OUTPUT);
-  pinMode(R_LPWM, OUTPUT);
-
-  pinMode(LINE_FL, INPUT);
-  pinMode(LINE_FR, INPUT);
-  pinMode(LINE_BL, INPUT);
-  pinMode(LINE_BR, INPUT);
-
-  pinMode(IR_LEFT, INPUT);
-  pinMode(IR_CENTER, INPUT);
-  pinMode(IR_RIGHT, INPUT);
-  pinMode(IR_SIDE_LEFT, INPUT);
-  pinMode(IR_SIDE_RIGHT, INPUT);
+void setup()
+{
+	pinMode(L_RPWM, OUTPUT);
+	pinMode(L_LPWM, OUTPUT);
+	pinMode(R_RPWM, OUTPUT);
+	pinMode(R_LPWM, OUTPUT);
+	pinMode(LINE_FL_MASK, INPUT);
+	pinMode(LINE_FR_MASK, INPUT);
+	pinMode(LINE_BL_MASK, INPUT);
+	pinMode(LINE_BR_MASK, INPUT);
+	pinMode(IR_LEFT_MASK, INPUT);
+	pinMode(IR_CENTER_MASK, INPUT);
+	pinMode(IR_RIGHT_MASK, INPUT);
+	pinMode(IR_SIDE_LEFT_MASK, INPUT);
+	pinMode(IR_SIDE_RIGHT_MASK, INPUT);
 }
 
-// ---- الحلقة الرئيسية ----
-void loop() {
-  if(millis() - lastAction < ACTION_INTERVAL)
-    return;
-  lastAction = millis();
+void loop()
+{
+	if (millis() - lastAction < ACTION_INTERVAL)
+		return;
+	lastAction = millis();
 
-  fl = digitalRead(LINE_FL);
-  fr = digitalRead(LINE_FR);
-  bl = digitalRead(LINE_BL);
-  br = digitalRead(LINE_BR);
+	uint8_t fl, fr, bl, br;
+	readLineSensors(fl, fr, bl, br);
+	if (!fl || !fr || !bl || !br)
+	{
+		handleLineEdgeCases(fl, fr, bl, br);
+		return;
+	}
 
-  if(handleLineCorrection()) return; // skip normal behavior while holding
+	uint8_t irL, irC, irR, irSL, irSR;
+	readIRSensors(irL, irC, irR, irSL, irSR);
 
-  if (!fl || !fr || !bl || !br){
-    prepareLineCorrection(fl, fr, bl, br);
-    return;
-  }
+	if (!irL || !irC || !irR || !irSL || !irSR)
+		robotState = ATTACK;
+	else
+		robotState = SEARCH;
 
-  int irL  = readSensor(IR_LEFT);
-  int irC  = readSensor(IR_CENTER);
-  int irR  = readSensor(IR_RIGHT);
-  int irSL = readSensor(IR_SIDE_LEFT);
-  int irSR = readSensor(IR_SIDE_RIGHT);
+	switch (robotState)
+	{
+	case ATTACK:
+		if (!irC)
+		{
+			turning = false;
+			moveForward(ATTACK_SPEED);
+			lastEnemyDirection = CENTER;
+		}
+		else if (!irL)
+		{
+			moveLeft(TURN_SPEED);
+			moveForward(100);
+			lastEnemyDirection = LEFT;
+		}
+		else if (!irR)
+		{
+			moveRight(TURN_SPEED);
+			moveForward(100);
+			lastEnemyDirection = RIGHT;
+		}
+		else if (!irSL)
+		{
+			turning = true;
+			turnStart = millis();
+			turnDirection = -1;
+		}
+		else if (!irSR)
+		{
+			turning = true;
+			turnStart = millis();
+			turnDirection = 1;
+		}
+		if (turning)
+		{
+			if (millis() - turnStart < SIDE_TURN_TIME)
+			{
+				if (turnDirection == -1) moveLeft(TURN_SPEED);
+				else moveRight(TURN_SPEED);
+			}
+			else
+				turning = false;
+		}
+		break;
 
-  if(!irL || !irC || !irR || !irSL || !irSR)
-    robotState = ATTACK;
-  else
-    robotState = SEARCH;
-
-  switch(robotState) {
-    case ATTACK:
-      if(!irC) {
-        turning = false;
-        moveForward(ATTACK_SPEED);
-        lastEnemyDirection = CENTER;
-      }
-      else if(!irL) {
-        moveLeft(TURN_SPEED);
-        lastEnemyDirection = LEFT;
-      }
-      else if(!irR) {
-        moveRight(TURN_SPEED);
-        lastEnemyDirection = RIGHT;
-      }
-      else if(!irSL) {
-        turning = true;
-        turnStart = millis();
-        turnDirection = -1;
-      }
-      else if(!irSR) {
-        turning = true;
-        turnStart = millis();
-        turnDirection = +1;
-      }
-
-      if(turning) {
-        if(millis() - turnStart < SIDE_TURN_TIME) {
-          if(turnDirection == -1) moveLeft(SIDE_TURN_SPEED);
-          else moveRight(SIDE_TURN_SPEED);
-        } else
-          turning = false;
-      }
-      break;
-
-    case SEARCH:
-      if(millis() - searchTimer > 150) {
-        searchAngle += SEARCH_STEP;
-        if(searchAngle >= 180) searchAngle = 0;
-        searchTimer = millis();
-      }
-
-      if(lastEnemyDirection == LEFT) {
-        if(searchAngle < 90) moveLeft(SEARCH_SPEED);
-        else moveRight(SEARCH_SPEED);
-      }
-      else if(lastEnemyDirection == RIGHT) {
-        if(searchAngle < 90) moveRight(SEARCH_SPEED);
-        else moveLeft(SEARCH_SPEED);
-      }
-      else {
-        if(searchAngle < 90) moveRight(SEARCH_SPEED);
-        else moveLeft(SEARCH_SPEED);
-      }
-      moveForward(SEARCH_SPEED);
-      break;
-  }
+	case SEARCH:
+		if (millis() - searchTimer > 150)
+		{
+			searchAngle += SEARCH_STEP;
+			if (searchAngle >= 180) searchAngle = 0;
+			searchTimer = millis();
+		}
+		if (lastEnemyDirection == LEFT)
+		{
+			if (searchAngle < 90) moveLeft(SEARCH_SPEED);
+			else moveRight(SEARCH_SPEED);
+		}
+		else if (lastEnemyDirection == RIGHT)
+		{
+			if (searchAngle < 90) moveRight(SEARCH_SPEED);
+			else moveLeft(SEARCH_SPEED);
+		}
+		else
+		{
+			if (searchAngle < 90) moveRight(SEARCH_SPEED);
+			else moveLeft(SEARCH_SPEED);
+		}
+		moveForward(SEARCH_SPEED / 2);
+		break;
+	}
 }
